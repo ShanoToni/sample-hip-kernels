@@ -1,9 +1,9 @@
 __global__ void sync_test(int *ng /* out int*/, int *comm /*in array == 0*/, int *res /*out array*/)
 {
-  auto threadIdx = threadIdx.x + blockIdx.x * blockDim.x;
+  auto Idx = threadIdx.x + blockIdx.x * blockDim.x;
   ng = 0;
   __syncthreads();
-  if (threadIdx % 2)
+  if (Idx % 2)
   {
     coalesced_group cg = coalesced_threads();
     unsigned int group_idx;
@@ -19,14 +19,14 @@ __global__ void sync_test(int *ng /* out int*/, int *comm /*in array == 0*/, int
       comm[group_idx] = 1;
     }
     cg.sync();
-    *res[threadIdx] = comm[group_idx] == 1;
+    *res[Idx] = comm[group_idx] == 1;
   }
 }
 
-__global__ void num_rank_test(int *ng /*out int*/, int *res /*out array*/, int *ptr /*out array*/)
+__global__ void num_rank_test(int *ng /*out int*/, int *numThread /*out array*/, int *rankOfThread /*out array*/)
 {
-  auto threadIdx = threadIdx.x + blockIdx.x * blockDim.x;
-  if (threadIdx % 2)
+  auto Idx = threadIdx.x + blockIdx.x * blockDim.x;
+  if (Idx % 2)
   {
     coalesced_group cg = coalesced_threads();
     bool leader = cg.thread_rank() == 0;
@@ -34,20 +34,20 @@ __global__ void num_rank_test(int *ng /*out int*/, int *res /*out array*/, int *
     {
       atomicInc(&ng, UINT_MAX);
     }
-    res[threadIdx] = cg.num_threads(); // [2,2,3,2,3,2,3]
-    ptr[threadIdx] = cg.thread_rank(); // [0,0,0,1,1,1,2] or [0,1,0,0,1,1,2]
+    numThreadsOut[Idx] = cg.num_threads();   // [2,2,3,2,3,2,3]
+    rankOfThreadOut[Idx] = cg.thread_rank(); // [0,0,0,1,1,1,2] or [0,1,0,0,1,1,2]
   }
 }
 
 __global__ void shfl_up_down_test(int *ng /*out int*/, int *res /*out array*/, int *sum /*out array*/, int *input /*in array*/)
 {
-  auto threadIdx = threadIdx.x + blockIdx.x * blockDim.x;
-  int localSum = input[threadIdx];
+  auto Idx = threadIdx.x + blockIdx.x * blockDim.x;
+  int localSum = input[Idx];
   ng = 0;
   int x = 0;
   int power = 2;
   __syncthreads();
-  if (threadIdx % 2)
+  if (Idx % 2)
   {
     coalesced_group cg = coalesced_threads();
     bool leader = cg.thread_rank() == 0;
@@ -67,14 +67,17 @@ __global__ void shfl_up_down_test(int *ng /*out int*/, int *res /*out array*/, i
     // Version 1 for shfl_up
     for (int i = 0; i < power; i = power / 2)
     {
-      atomicAdd(localSum, cg.shfl_up(localSum, i));
+      localSum += cg.shfl_up(localSum, i);
+      power / 2;
     }
 
     // Version 2 for shfl_down
     for (int i = cg.num_threads(); i > 0; i = power / 2)
     {
-      atomicAdd(localSum, cg.shfl_down(localSum, i));
+      localSum += cg.shfl_down(localSum, i);
+      power / 2
     }
+
     cg.sync();
 
     if (leader)
@@ -84,81 +87,74 @@ __global__ void shfl_up_down_test(int *ng /*out int*/, int *res /*out array*/, i
   }
 }
 
-__global__ void all_test(int *ng /*out int*/, int *out /*out array*/)
+__global__ void all_test(int *ng /*out int*/, int *out /*out array*/, bool *input /*in array*/)
 {
-  auto threadIdx = threadIdx.x + blockIdx.x * blockDim.x;
-  __syncthreads();
+  auto Idx = threadIdx.x + blockIdx.x * blockDim.x;
 
-  if (threadIdx % 2)
+  if (Idx % 2)
   {
-    unsigned int group_idx;
-
     coalesced_group cg = coalesced_threads();
     bool leader = cg.thread_rank() == 0;
     if (leader)
     {
       group_idx = atomicInc(&ng, UINT_MAX);
-      *out[group_idx] = cg.all(threadIdx % 2 == 0); // threadIdx % 2 == 1 for true
     }
+    // input can be set to [1,1,1,1, ...] out = 1, [0,0,0,0, ...] out = 0, [1,0,1,0, ...] out = 0
+    out[Idx] = cg.all(input[Idx]);
   }
 }
 
-__global__ void any_test(int *ng /*out int*/, int *out /*out array*/)
+__global__ void any_test(int *ng /*out int*/, int *out /*out array*/, bool *input /*in array*/)
 {
-  auto threadIdx = threadIdx.x + blockIdx.x * blockDim.x;
-  int val = 2;
-  __syncthreads();
+  auto Idx = threadIdx.x + blockIdx.x * blockDim.x;
 
-  if (threadIdx % 2)
+  if (Idx % 2)
   {
-    unsigned int group_idx;
-
     coalesced_group cg = coalesced_threads();
     bool leader = cg.thread_rank() == 0;
     if (leader)
     {
       group_idx = atomicInc(&ng, UINT_MAX);
-      val = 3; // We can only know for sure the coalesced group will contain at least one thread
     }
-    if (leader)
-    {
-      *out[group_idx] = cg.any(val % 2 == 1); // true
-    }
+    // input can be set to [1,1,1,1, ...] out = 1, [0,0,0,0, ...] out = 0, [1,0,1,0, ...] out = 1
+    out[group_idx] = cg.any(input[Idx]);
   }
 }
 
 __global__ void ballot_test(int *ng /*out int*/, int *out /*out array*/)
 {
-  auto threadIdx = threadIdx.x + blockIdx.x * blockDim.x;
+  auto Idx = threadIdx.x + blockIdx.x * blockDim.x;
   int val;
-  __syncthreads();
 
-  if (threadIdx % 2)
+  if (Idx % 2)
   {
     unsigned int group_idx;
 
     coalesced_group cg = coalesced_threads();
-    if (cg.thread_rank() == 0)
-    {
-      val = 1;
-    }
+
     bool leader = cg.thread_rank() == 0;
     if (leader)
     {
       group_idx = atomicInc(&ng, UINT_MAX);
-      *out[group_idx] = cg.ballot(val); // = 1 (We can only know for sure the coalesced group will contain at least one thread)
+    }
+    auto ballotResult = cg.ballot(Idx < 5); // return only threads with Idx smaller than 5
+    if (leader)
+    {
+      // we want the ballot result to contain no more than 5 bits set to 1
+      // and we want at least some of the the 5 least significant bits to be non zero
+      out[group_idx] = _popc(ballotResult) < 5 && _popc(ballotResult & 0b11111) != 0;
     }
   }
 }
 
+
 __global__ void match_any_test(int *ng /*out int*/, int *out /*out array*/)
 {
-  auto threadIdx = threadIdx.x + blockIdx.x * blockDim.x;
-  int val = threadIdx;
+  auto Idx = threadIdx.x + blockIdx.x * blockDim.x;
+  int val = Idx;
   int laneId;
-  __syncthreads();
 
-  if (threadIdx % 2)
+  if (Idx % 2)
   {
     unsigned int group_idx;
 
@@ -166,6 +162,7 @@ __global__ void match_any_test(int *ng /*out int*/, int *out /*out array*/)
     bool leader = cg.thread_rank() == 0;
     if (leader)
     {
+      val = 777;
       group_idx = atomicInc(&ng, UINT_MAX);
     }
 
@@ -178,14 +175,16 @@ __global__ void match_any_test(int *ng /*out int*/, int *out /*out array*/)
         laneId = threadIdx.x & 0x1f;
       }
       laneId = cg.shfl(laneId, 1);
-      bool leader = cg.thread_rank() == 0;
+
+      auto mask = cg.match_any(val); // the mast should be equal to the mask of thread_rank 1 and thread_rank 0
       if (leader)
       {
-        val = 777;
-        auto mask = cg.match_any(val); // the mast should be equal to the mask of thread_rank 1 and thread_rank 0
         val = 0; // make sure the val is correctly recieved from the thread with thread_rank 1
-        val = __shfl_sync(mask, val, laneId);
-        out[group_idx] = val;
+      }
+      val = __shfl_sync(mask, val, laneId);
+      if (leader)
+      {
+        out[group_idx] = val; // __shufl_sync() should set the val in the leader thread to the one at rank 1 (777)
       }
     }
     else
@@ -195,14 +194,13 @@ __global__ void match_any_test(int *ng /*out int*/, int *out /*out array*/)
   }
 }
 
-__global__ void match_all_test(int *ng /*out int*/, int *out /*out array*/)
+__global__ void match_all_test(int *ng /*out int*/, int *maskRes /*out array*/, int *predRes /*out array*/)
 {
-  auto threadIdx = threadIdx.x + blockIdx.x * blockDim.x;
+  auto Idx = threadIdx.x + blockIdx.x * blockDim.x;
   int val;
   int laneId;
-  __syncthreads();
 
-  if (threadIdx % 2)
+  if (Idx % 2)
   {
     unsigned int group_idx;
 
@@ -225,42 +223,46 @@ __global__ void match_all_test(int *ng /*out int*/, int *out /*out array*/)
         val = 1;
       }
 
-      laneId = cg.shfl(laneId, 1);
+      laneId = cg.shfl(laneId, 1); // make other threads in warp aware of laneId of thread 1
       if (leader)
       {
         val = 1; // depending on this being commented match_all can be tested for returning the mask or returning 0
-        auto mask = cg.match_all(val); // = 0 || if val=1 is set in this branch mask != 0
-        if (mask != 0)
-        {
-          val = __shfl_sync(mask, val, laneId); // all match returns mask
-          out[group_idx] = val;
-        }
-        else
-        {
-          out[group_idx] = 0; // not all match returns 0 (negative)
-        }
       }
+      int predicate = 0;
+      // if val is the same across group mask is mask of all threads in group
+      // and predicate is set to 1
+      auto mask = cg.match_all(val, predicate);
+      if (leader)
+      {
+        // test 1 test mask if it contains the thread with rank 1 (as set in laneId)
+        val = 0;
+        val = __shfl_sync(mask, val, laneId); // all match returns mask of all threads in group
+        maskRes[group_idx] = val;
+        // test2 check if the predicate is correct
+        predRes[group_idx] = predicate; // if match_all executes correctly the predicate is set to 1
+      } 
     }
     else
     {
-      out[group_idx] = -1; // the coalesced group did not meet conditions requried for test
+      // the coalesced group did not meet conditions requried for test
+      maskRes[group_idx] = -1; 
+      predRes[group_idx] = -1; 
+
     }
   }
 }
 
 __global__ void labeled_partition_test()
 {
-  auto threadIdx = threadIdx.x + blockIdx.x * blockDim.x;
+  auto Idx = threadIdx.x + blockIdx.x * blockDim.x;
   int val = 0;
   /// The following code will create a 32-thread tile
   thread_block block = this_thread_block();
   thread_block_tile<32> tile32 = tiled_partition<32>(block);
-  __syncthreads();
 
-  if (threadIdx % 2)
+  if (Idx % 2)
   {
     val = 5;
-    __syncthreads();
   }
   // the groups created here should be exactly 16 threads/lanes/warp items/flux capacitors(why not?)
   coalesced_group cg = labeled_partition(tile32, val);
@@ -268,17 +270,15 @@ __global__ void labeled_partition_test()
 
 __global__ void binary_partition_test()
 {
-  auto threadIdx = threadIdx.x + blockIdx.x * blockDim.x;
+  auto Idx = threadIdx.x + blockIdx.x * blockDim.x;
   bool val = false;
   /// The following code will create a 32-thread tile
   thread_block block = this_thread_block();
   thread_block_tile<32> tile32 = tiled_partition<32>(block);
-  __syncthreads();
 
-  if (threadIdx % 2)
+  if (Idx % 2)
   {
     val = true;
-    __syncthreads();
   }
   // the groups created here should be exactly 16 threads/lanes/warp items/flux capacitors(why not?)
   coalesced_group cg = labeled_partition(tile32, val);
@@ -290,12 +290,11 @@ namespace coopg = cooperative_groups;
 // Note: kernel assumes execution with 1 warp
 __global__ void memcpy_asyc_test(int *ng /*out int*/, int *out /*out array*/, int *in_data /*in array[64]*/)
 {
-  auto threadIdx = threadIdx.x + blockIdx.x * blockDim.x;
+  auto Idx = threadIdx.x + blockIdx.x * blockDim.x;
   const size_t = numElements = 64;
   const size_t = elemInShared = 32;
   __shared__ int shared_data[elemInShared];
-  __syncthreads();
-  if (threadIdx % 2)
+  if (Idx % 2)
   {
     // create thread group
     coalesced_group cg = coalesced_threads();
@@ -336,11 +335,10 @@ __global__ void memcpy_asyc_test(int *ng /*out int*/, int *out /*out array*/, in
 
 __global__ void reduce_test(int *ng /*out int*/, int *out /*out array*/, int *in_data /*in array[64]*/)
 {
-  size_t threadIdx = threadIdx.x + blockIdx.x * blockDim.x;
+  size_t Idx = threadIdx.x + blockIdx.x * blockDim.x;
   const size_t = numElements = 64;
 
-  __syncthreads();
-  if (threadIdx % 2)
+  if (Idx % 2)
   {
     coalesced_group cg = coalesced_threads();
 

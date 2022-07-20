@@ -34,8 +34,8 @@ __global__ void num_rank_test(int *ng /*out int*/, int *numThread /*out array*/,
     {
       atomicInc(&ng, UINT_MAX);
     }
-    numThreadsOut[Idx] = cg.num_threads();   // [2,2,3,2,3,2,3]
-    rankOfThreadOut[Idx] = cg.thread_rank(); // [0,0,0,1,1,1,2] or [0,1,0,0,1,1,2]
+    numThread[Idx] = cg.num_threads();   // [2,2,3,2,3,2,3]
+    rankOfThread[Idx] = cg.thread_rank(); // [0,0,0,1,1,1,2] or [0,1,0,0,1,1,2]
   }
 }
 
@@ -75,7 +75,7 @@ __global__ void shfl_up_down_test(int *ng /*out int*/, int *res /*out array*/, i
     for (int i = cg.num_threads(); i > 0; i = power / 2)
     {
       localSum += cg.shfl_down(localSum, i);
-      power / 2
+      power / 2; 
     }
 
     cg.sync();
@@ -87,7 +87,7 @@ __global__ void shfl_up_down_test(int *ng /*out int*/, int *res /*out array*/, i
   }
 }
 
-__global__ void all_test(int *ng /*out int*/, int *out /*out array*/, bool *input /*in array*/)
+__global__ void all_test(int *ng /*out int*/, int *out /*out int*/, bool *input /*in array*/)
 {
   auto Idx = threadIdx.x + blockIdx.x * blockDim.x;
 
@@ -104,7 +104,7 @@ __global__ void all_test(int *ng /*out int*/, int *out /*out array*/, bool *inpu
   }
 }
 
-__global__ void any_test(int *ng /*out int*/, int *out /*out array*/, bool *input /*in array*/)
+__global__ void any_test(int *ng /*out int*/, int *out /*out int*/, bool *input /*in array*/)
 {
   auto Idx = threadIdx.x + blockIdx.x * blockDim.x;
 

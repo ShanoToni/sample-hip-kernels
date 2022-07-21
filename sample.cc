@@ -87,7 +87,7 @@ __global__ void shfl_up_down_test(int *ng /*out int*/, int *res /*out array*/, i
   }
 }
 
-__global__ void all_test(int *ng /*out int*/, int *out /*out int*/, bool *input /*in array*/)
+__global__ void all_test(int *ng /*out int*/, int *out /*out array*/, bool *input /*in array*/)
 {
   auto Idx = threadIdx.x + blockIdx.x * blockDim.x;
 
@@ -104,7 +104,7 @@ __global__ void all_test(int *ng /*out int*/, int *out /*out int*/, bool *input 
   }
 }
 
-__global__ void any_test(int *ng /*out int*/, int *out /*out int*/, bool *input /*in array*/)
+__global__ void any_test(int *ng /*out int*/, int *out /*out array*/, bool *input /*in array*/)
 {
   auto Idx = threadIdx.x + blockIdx.x * blockDim.x;
 
@@ -236,7 +236,11 @@ __global__ void match_all_test(int *ng /*out int*/, int *maskRes /*out array*/, 
       {
         // test 1 test mask if it contains the thread with rank 1 (as set in laneId)
         val = 0;
-        val = __shfl_sync(mask, val, laneId); // all match returns mask of all threads in group
+      }
+      
+      val = __shfl_sync(mask, val, laneId); // all match returns mask of all threads in group
+      
+      if (leader){
         maskRes[group_idx] = val;
         // test2 check if the predicate is correct
         predRes[group_idx] = predicate; // if match_all executes correctly the predicate is set to 1

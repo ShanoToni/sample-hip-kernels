@@ -1,3 +1,5 @@
+namespace coopg = cooperative_groups;
+
 __global__ void sync_test(int *ng /* out int*/, int *comm /*in array == 0*/, int *res /*out array*/)
 {
   auto Idx = threadIdx.x + blockIdx.x * blockDim.x;
@@ -19,6 +21,9 @@ __global__ void sync_test(int *ng /* out int*/, int *comm /*in array == 0*/, int
       comm[group_idx] = 1;
     }
     cg.sync();
+    // alternatively
+    // coopg::sync(cg);
+
     *res[Idx] = comm[group_idx] == 1;
   }
 }
@@ -34,7 +39,7 @@ __global__ void num_rank_test(int *ng /*out int*/, int *numThread /*out array*/,
     {
       atomicInc(&ng, UINT_MAX);
     }
-    numThread[Idx] = cg.num_threads();   // [2,2,3,2,3,2,3]
+    numThread[Idx] = cg.num_threads();    // [2,2,3,2,3,2,3]
     rankOfThread[Idx] = cg.thread_rank(); // [0,0,0,1,1,1,2] or [0,1,0,0,1,1,2]
   }
 }
@@ -55,13 +60,14 @@ __global__ void shfl_up_down_test(int *ng /*out int*/, int *res /*out array*/, i
     if (leader)
     {
       group_idx = atomicInc(&ng, UINT_MAX);
-      // calcuate closest power of 2 larger than the cg.num_threads
-      x = cg.num_threads();
-      x--;
-      while (x >>= 1)
-      {
-        power <<= 1;
-      }
+    }
+
+    // calcuate closest power of 2 larger than the cg.num_threads
+    x = cg.num_threads();
+    x--;
+    while (x >>= 1)
+    {
+      power <<= 1;
     }
 
     // Version 1 for shfl_up
@@ -75,7 +81,7 @@ __global__ void shfl_up_down_test(int *ng /*out int*/, int *res /*out array*/, i
     for (int i = cg.num_threads(); i > 0; i = power / 2)
     {
       localSum += cg.shfl_down(localSum, i);
-      power / 2; 
+      power / 2;
     }
 
     cg.sync();
@@ -90,6 +96,7 @@ __global__ void shfl_up_down_test(int *ng /*out int*/, int *res /*out array*/, i
 __global__ void all_test(int *ng /*out int*/, int *out /*out array*/, bool *input /*in array*/)
 {
   auto Idx = threadIdx.x + blockIdx.x * blockDim.x;
+  int tmpOut;
 
   if (Idx % 2)
   {
@@ -100,13 +107,18 @@ __global__ void all_test(int *ng /*out int*/, int *out /*out array*/, bool *inpu
       group_idx = atomicInc(&ng, UINT_MAX);
     }
     // input can be set to [1,1,1,1, ...] out = 1, [0,0,0,0, ...] out = 0, [1,0,1,0, ...] out = 0
-    out[Idx] = cg.all(input[Idx]);
+    tmpOut = cg.all(input[Idx]);
+    if (leader)
+    {
+      out[group_idx] = tmpOut;
+    }
   }
 }
 
 __global__ void any_test(int *ng /*out int*/, int *out /*out array*/, bool *input /*in array*/)
 {
   auto Idx = threadIdx.x + blockIdx.x * blockDim.x;
+  int tmpOut;
 
   if (Idx % 2)
   {
@@ -117,7 +129,11 @@ __global__ void any_test(int *ng /*out int*/, int *out /*out array*/, bool *inpu
       group_idx = atomicInc(&ng, UINT_MAX);
     }
     // input can be set to [1,1,1,1, ...] out = 1, [0,0,0,0, ...] out = 0, [1,0,1,0, ...] out = 1
-    out[group_idx] = cg.any(input[Idx]);
+    tmpOut = cg.any(input[Idx]);
+    if (leader)
+    {
+      out[group_idx] = tmpOut;
+    }
   }
 }
 
@@ -146,7 +162,6 @@ __global__ void ballot_test(int *ng /*out int*/, int *out /*out array*/)
     }
   }
 }
-
 
 __global__ void match_any_test(int *ng /*out int*/, int *out /*out array*/)
 {
@@ -237,21 +252,21 @@ __global__ void match_all_test(int *ng /*out int*/, int *maskRes /*out array*/, 
         // test 1 test mask if it contains the thread with rank 1 (as set in laneId)
         val = 0;
       }
-      
+
       val = __shfl_sync(mask, val, laneId); // all match returns mask of all threads in group
-      
-      if (leader){
+
+      if (leader)
+      {
         maskRes[group_idx] = val;
         // test2 check if the predicate is correct
         predRes[group_idx] = predicate; // if match_all executes correctly the predicate is set to 1
-      } 
+      }
     }
     else
     {
       // the coalesced group did not meet conditions requried for test
-      maskRes[group_idx] = -1; 
-      predRes[group_idx] = -1; 
-
+      maskRes[group_idx] = -1;
+      predRes[group_idx] = -1;
     }
   }
 }
@@ -287,8 +302,6 @@ __global__ void binary_partition_test()
   // the groups created here should be exactly 16 threads/lanes/warp items/flux capacitors(why not?)
   coalesced_group cg = labeled_partition(tile32, val);
 }
-
-namespace coopg = cooperative_groups;
 
 // Using wait()
 // Note: kernel assumes execution with 1 warp

@@ -300,7 +300,7 @@ __global__ void binary_partition_test()
     val = true;
   }
   // the groups created here should be exactly 16 threads/lanes/warp items/flux capacitors(why not?)
-  coalesced_group cg = labeled_partition(tile32, val);
+  coalesced_group cg = binary_partition(tile32, val);
 }
 
 // Using wait()

@@ -385,3 +385,50 @@ __global__ void reduce_test(int *ng /*out int*/, int *out /*out array*/, int *in
     }
   }
 }
+
+__global__ void scan_test(int *ng /*out int*/, int *out_data /*out array*/, int *out_group_size /*in array[64]*/)
+{
+  size_t Idx = threadIdx.x + blockIdx.x * blockDim.x;
+  const size_t = numElements = 64;
+  int var = -1;
+
+  if (Idx % 2)
+  {
+    coalesced_group cg = coalesced_threads();
+    if (cg.num_threads() > 1) // we need at least 2 threads in the group
+    {
+      var = cg.thread_rank(); // changes for variations
+      unsigned int group_idx;
+      bool leader = cg.thread_rank() == 0;
+      if (leader)
+      {
+        group_idx = atomicInc(&ng, UINT_MAX);
+        out_group_size[ng] = cg.num_threads();
+      }
+      int result = coopg::inclusive_scan(cg, var, cg::plus<int>()); // we assume var for threads is [0,1,...,numThreads] so out[ng] = 15 for out_group_size[ng] = 6
+                                                                    // for exclusive scan out[ng] = 10 for out_group_size[ng] = 6
+      // other variations
+      /*
+      //cg::less
+      int result = coopg::inclusive_scan(cg, var, cg::less<int>()); // we assume var for threads is [0,1,...,numThreads] so out[ng] = 0;
+                                                                 // for exclusive scan out[ng] = 0
+      //cg::greater
+      int result = coopg::inclusive_scan(cg, var, cg::greater<int>()); // we assume var for threads is [0,1,2,...,numThreads] so out[ng] = out_group_size[ng] - 1;
+                                                                      // for exclusive scan out[ng] = out_group_size[ng] - 2
+      //cg::bit_and
+      int result = coopg::inclusive_scan(cg, var, cg::bit_and<int>()); // we assume var for threads is [0,1,0.1...,0] or [1,1,1.1...,1] or [0,0,0,0...,0] so out[ng] = 0 or 1 or 0 respectively;
+                                                                       // for exclusive scan out[ng] = 0 or 1 or 0 respectively
+      //cg::bit_xor
+      int result = coopg::inclusive_scan(cg, var, cg::bit_xor<int>()); // we assume var for threads is [1,1,...,1] so out[ng] = 0;
+                                                                        // same for exclusive scan
+      //cg::bit_or
+      int result = coopg::inclusive_scan(cg, var, cg::bit_or<int>()); // we assume var for threads is [0,1,0.1...,0] or [1,1,1.1...,1] or [0,0,0,0...,0] so out[ng] = 1 or 1 or 0 respectively;
+                                                                      // same for exclusive scan unless num_threads == 2
+      */
+      if (leader)
+      {
+        out[group_idx] = result;
+      }
+    }
+  }
+}
